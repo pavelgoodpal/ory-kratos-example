@@ -1,0 +1,19 @@
+.env
+node_modules/
+dist/
+*.log
+.DS_Store
+bower_components/
+
+# Environment and sensitive data
+*.podspec.lock
+
+# Build outputs
+build/
+
+# Operating system files
+Thumbs.db
+
+# Log files
+npm-debug.log*
+.idea

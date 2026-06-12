@@ -1,0 +1,161 @@
+name: car-store-kratos
+
+volumes:
+  postgres-data:
+  kratos-config:
+
+networks:
+  intranet:
+
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL — backing store for Ory Kratos
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - intranet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --------------------------------------------------------------------------
+  # Render kratos.yml from the template, substituting .env values.
+  # (The official kratos image is distroless and has no shell/envsubst, so we
+  #  do the templating in a tiny alpine init container into a shared volume.)
+  # --------------------------------------------------------------------------
+  kratos-config:
+    image: alpine:3.20
+    env_file: .env
+    volumes:
+      - ./kratos:/src:ro
+      - kratos-config:/etc/config/kratos
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache gettext >/dev/null
+        # URL-encode the '@' in the SMTP user so it is valid inside the URI.
+        export SMTP_USER_ENC=$$(printf '%s' "$$SMTP_USER" | sed 's/@/%40/g')
+        envsubst < /src/kratos.yml.tmpl > /etc/config/kratos/kratos.yml
+        cp /src/identity.schema.json /etc/config/kratos/identity.schema.json
+        mkdir -p /etc/config/kratos/oidc
+        cp /src/oidc/*.jsonnet /etc/config/kratos/oidc/
+        echo "Rendered kratos.yml:"
+        cat /etc/config/kratos/kratos.yml
+    networks:
+      - intranet
+
+  # --------------------------------------------------------------------------
+  # Run SQL migrations, then exit.
+  # --------------------------------------------------------------------------
+  kratos-migrate:
+    image: oryd/kratos:v1.3.1
+    environment:
+      DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&max_conns=20&max_idle_conns=4
+    volumes:
+      - kratos-config:/etc/config/kratos:ro
+    command: ["migrate", "sql", "-e", "--yes", "-c", "/etc/config/kratos/kratos.yml"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kratos-config:
+        condition: service_completed_successfully
+    networks:
+      - intranet
+    restart: on-failure
+
+  # --------------------------------------------------------------------------
+  # Ory Kratos — public API :4433, admin API :4434
+  # --------------------------------------------------------------------------
+  kratos:
+    image: oryd/kratos:v1.3.1
+    env_file: .env
+    environment:
+      DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&max_conns=20&max_idle_conns=4
+    command: ["serve", "-c", "/etc/config/kratos/kratos.yml", "--dev", "--watch-courier"]
+    volumes:
+      - kratos-config:/etc/config/kratos:ro
+    ports:
+      - "4433:4433"
+      - "4434:4434"
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+    networks:
+      - intranet
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Kratos Admin UI — web interface to list/view/edit/create/delete identities.
+  # Runs INSIDE the docker network and reaches the admin API by service name,
+  # so the admin API never has to be exposed to the host/internet.
+  # Open http://localhost:5173
+  # --------------------------------------------------------------------------
+  kratos-admin-ui:
+    # Prebuilt image lives on ghcr.io. If your network can't reach ghcr.io
+    # (token fetch / "unexpected EOF" errors), comment out the `image:` line
+    # below and uncomment the `build:` block to build it from source instead.
+    image: ghcr.io/dfoxg/kratos-admin-ui:v2.6.0
+    # build:
+    #   context: "https://github.com/dfoxg/kratos-admin-ui.git#v2.6.0:kratos-admin-ui"
+    environment:
+      KRATOS_ADMIN_URL: http://kratos:4434
+      KRATOS_PUBLIC_URL: http://kratos:4433
+    ports:
+      - "5173:8080"
+    depends_on:
+      kratos:
+        condition: service_started
+    networks:
+      - intranet
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Car store backend — Express + TypeScript, :4000
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+    env_file: .env
+    environment:
+      # Inside the docker network, talk to kratos by service name.
+      KRATOS_PUBLIC_URL: http://kratos:4433
+      KRATOS_ADMIN_URL: http://kratos:4434
+      PORT: ${PORT}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN}
+    ports:
+      - "4000:4000"
+    depends_on:
+      kratos:
+        condition: service_started
+    networks:
+      - intranet
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Car store frontend — React + Vite, :3000
+  # --------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      # These are read at build/runtime by Vite (see vite.config.ts).
+      VITE_KRATOS_PUBLIC_URL: ${KRATOS_PUBLIC_URL}
+      VITE_BACKEND_URL: http://localhost:${PORT}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - intranet
+    restart: unless-stopped

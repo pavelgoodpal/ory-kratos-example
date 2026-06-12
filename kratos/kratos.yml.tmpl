@@ -1,0 +1,126 @@
+version: v1.3.1
+
+# DSN is supplied via the DSN environment variable in docker-compose.
+
+serve:
+  public:
+    base_url: ${KRATOS_BROWSER_URL}/
+    cors:
+      enabled: true
+      allowed_origins:
+        - ${CLIENT_ORIGIN}
+      allowed_methods:
+        - POST
+        - GET
+        - PUT
+        - PATCH
+        - DELETE
+      allowed_headers:
+        - Authorization
+        - Cookie
+        - Content-Type
+        - X-Session-Token
+      exposed_headers:
+        - Content-Type
+        - Set-Cookie
+      allow_credentials: true
+  admin:
+    base_url: http://kratos:4434/
+
+selfservice:
+  default_browser_return_url: ${CLIENT_ORIGIN}/
+  allowed_return_urls:
+    - ${CLIENT_ORIGIN}
+
+  methods:
+    # Sign-in is username + password only. Google is NOT a login method here —
+    # it is connected separately (offline OAuth) when a user schedules a visit.
+    password:
+      enabled: true
+      config:
+        haveibeenpwned_enabled: false
+        min_password_length: 8
+    code:
+      enabled: false
+    link:
+      enabled: false
+    oidc:
+      enabled: false
+
+  flows:
+    error:
+      ui_url: ${CLIENT_ORIGIN}/error
+
+    settings:
+      ui_url: ${CLIENT_ORIGIN}/settings
+      privileged_session_max_age: 15m
+      required_aal: highest_available
+
+    # Recovery and verification are email/code features; not needed for a
+    # Google-only setup (Google supplies a verified email).
+    recovery:
+      enabled: false
+      ui_url: ${CLIENT_ORIGIN}/recovery
+      use: code
+
+    verification:
+      enabled: false
+      ui_url: ${CLIENT_ORIGIN}/verification
+      use: code
+      after:
+        default_browser_return_url: ${CLIENT_ORIGIN}/
+
+    logout:
+      after:
+        default_browser_return_url: ${CLIENT_ORIGIN}/login
+
+    login:
+      ui_url: ${CLIENT_ORIGIN}/login
+      lifespan: 10m
+
+    registration:
+      lifespan: 10m
+      ui_url: ${CLIENT_ORIGIN}/registration
+      after:
+        password:
+          hooks:
+            - hook: session
+        oidc:
+          hooks:
+            - hook: session
+
+log:
+  level: info
+  format: text
+  leak_sensitive_values: false
+
+secrets:
+  cookie:
+    - ${KRATOS_COOKIE_SECRET}
+  cipher:
+    - ${KRATOS_CIPHER_SECRET}
+
+ciphers:
+  algorithm: xchacha20-poly1305
+
+hashers:
+  algorithm: bcrypt
+  bcrypt:
+    cost: 8
+
+identity:
+  default_schema_id: default
+  schemas:
+    - id: default
+      url: file:///etc/config/kratos/identity.schema.json
+
+courier:
+  smtp:
+    connection_uri: smtp://${SMTP_USER_ENC}:${SMTP_PASS}@${SMTP_HOST}:${SMTP_PORT}/
+    from_address: ${SMTP_FROM}
+    from_name: ${SMTP_FROM_NAME}
+
+session:
+  lifespan: 720h
+  cookie:
+    same_site: Lax
