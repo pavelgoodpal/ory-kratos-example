@@ -18,7 +18,13 @@ import type {
  * directly to `ui.action` — Kratos sets cookies, performs OIDC redirects, and
  * on error/continuation redirects back here with `?flow=<id>` and messages.
  */
-export function Flow({ ui }: { ui: UiContainer }) {
+export function Flow({
+  ui,
+  hideOidc = false,
+}: {
+  ui: UiContainer;
+  hideOidc?: boolean;
+}) {
   const hidden: UiNode[] = [];
   const oidc: UiNode[] = [];
   const credential: UiNode[] = [];
@@ -28,7 +34,9 @@ export function Flow({ ui }: { ui: UiContainer }) {
     if (node.type === "input" && attrs.type === "hidden") {
       hidden.push(node);
     } else if (node.group === "oidc") {
-      oidc.push(node);
+      // Google is link-only here — hidden on login/registration, shown on
+      // the settings page so it can be linked to an existing account.
+      if (!hideOidc) oidc.push(node);
     } else {
       credential.push(node);
     }

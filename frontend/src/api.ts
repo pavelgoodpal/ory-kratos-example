@@ -68,6 +68,3 @@ export const api = {
   calendarStatus: () =>
     req<{ connected: boolean }>("/api/google/calendar/status"),
 };
-
-// Top-level navigation (not fetch): starts the Google Calendar consent flow.
-export const calendarConnectUrl = `${BACKEND_URL}/api/google/calendar/connect`;

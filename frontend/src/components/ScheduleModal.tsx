@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, calendarConnectUrl, type Car, type CalendarEvent } from "../api";
+import { api, type Car, type CalendarEvent } from "../api";
 
 export function ScheduleModal({
   car,
@@ -32,8 +32,9 @@ export function ScheduleModal({
   }, []);
 
   function connect() {
-    // Full-page navigation to the backend, which redirects to Google consent.
-    window.location.href = calendarConnectUrl;
+    // Linking goes through Kratos: the "Link Google" button lives on the
+    // settings page (the Kratos settings/OIDC flow).
+    window.location.href = "/settings";
   }
 
   async function submit(e: React.FormEvent) {
@@ -87,12 +88,13 @@ export function ScheduleModal({
         ) : showConnect ? (
           <div className="schedule-done">
             <p className="muted">
-              To add visits to your calendar, connect your Google Calendar once.
-              You'll be asked to grant calendar access.
+              To add visits to your calendar, link your Google account once. You'll
+              do this on the Settings page ("Link Google"), where you'll grant
+              calendar access.
             </p>
             {error && <p className="message message-error">{error}</p>}
             <button className="btn btn-oidc full" onClick={connect}>
-              Connect Google Calendar
+              Go to Settings to link Google
             </button>
           </div>
         ) : (

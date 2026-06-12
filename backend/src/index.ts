@@ -1,14 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { randomUUID } from "node:crypto";
-import {
-  buildConsentUrl,
-  CalendarError,
-  createCalendarEvent,
-  exchangeCode,
-  isConnected,
-  saveRefreshToken,
-} from "./calendar.js";
+import { CalendarError, createCalendarEvent, isLinked } from "./calendar.js";
 import { cars, orders, type Order } from "./data.js";
 import { getSession, requireSession } from "./kratos.js";
 
@@ -91,54 +84,9 @@ app.get("/api/orders", requireSession, (req, res) => {
   res.json(mine);
 });
 
-// --- Connect Google Calendar (dedicated OAuth, offline access) ------------
-// Short-lived store mapping an OAuth `state` to the identity that started it.
-const pendingStates = new Map<string, { identityId: string; exp: number }>();
-
-function newState(identityId: string): string {
-  const s = randomUUID();
-  pendingStates.set(s, { identityId, exp: Date.now() + 10 * 60_000 });
-  return s;
-}
-function consumeState(s: string): string | null {
-  const v = pendingStates.get(s);
-  if (!v) return null;
-  pendingStates.delete(s);
-  return v.exp < Date.now() ? null : v.identityId;
-}
-
-// Is the current user's calendar connected?
+// Is Google linked to the current identity (via Kratos)?
 app.get("/api/google/calendar/status", requireSession, async (req, res) => {
-  res.json({ connected: await isConnected(req.session!.identity!.id) });
-});
-
-// Start the consent flow (top-level browser redirect to Google).
-app.get("/api/google/calendar/connect", requireSession, (req, res) => {
-  const state = newState(req.session!.identity!.id);
-  res.redirect(buildConsentUrl(state));
-});
-
-// Google redirects back here with ?code & ?state. Identity comes from state.
-app.get("/api/google/calendar/callback", async (req, res) => {
-  const back = (status: string) =>
-    res.redirect(`${CLIENT_ORIGIN}/?calendar=${status}`);
-
-  const { code, state, error } = req.query;
-  if (error) return back("denied");
-  if (typeof state !== "string" || typeof code !== "string") return back("error");
-
-  const identityId = consumeState(state);
-  if (!identityId) return back("error");
-
-  try {
-    const tokens = await exchangeCode(code);
-    if (!tokens.refresh_token) return back("norefresh");
-    await saveRefreshToken(identityId, tokens.refresh_token);
-    return back("connected");
-  } catch (err) {
-    console.error("Calendar connect failed:", err);
-    return back("error");
-  }
+  res.json({ connected: await isLinked(req.session!.identity!.id) });
 });
 
 // --- Schedule a visit (protected) -----------------------------------------

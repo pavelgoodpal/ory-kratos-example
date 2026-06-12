@@ -21,7 +21,7 @@ export default function Registration() {
       }
     >
       {error && <p className="message message-error">{error}</p>}
-      {flow ? <Flow ui={flow.ui} /> : !error && <p className="muted">Loading…</p>}
+      {flow ? <Flow ui={flow.ui} hideOidc /> : !error && <p className="muted">Loading…</p>}
     </AuthCard>
   );
 }

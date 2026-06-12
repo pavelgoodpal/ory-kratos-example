@@ -13,7 +13,7 @@ export default function Settings() {
   return (
     <AuthCard
       title="Account settings"
-      subtitle="Update your profile, change your password, or link social accounts."
+      subtitle="Change your password, update your profile, or link Google to enable scheduling visits to your calendar."
       footer={
         <span>
           <Link to="/">Back to store</Link>

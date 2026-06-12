@@ -5,14 +5,21 @@ authentication handled entirely by **Ory Kratos**, running in Docker with
 PostgreSQL.
 
 **Sign-in: username + password** (Ory Kratos). After signing in, a user can
-browse and reserve cars. To **schedule a visit to the seller**, they connect
-their **Google** account once — a backend-owned OAuth flow with **offline
-access** that returns a **refresh token** (stored on the Kratos identity under
-`metadata_admin`). The app then creates a 30-minute event in their Google
-Calendar and can refresh the token silently afterwards.
+browse and reserve cars. To **schedule a visit to the seller**, they **link
+their Google account through Kratos** — the "Link Google" button in Kratos's
+**settings flow** (OIDC account linking). Kratos performs the Google OAuth and
+stores the Google tokens (encrypted) in the identity's **`oidc` credential**.
+The backend reads that token via the Kratos Admin API
+(`?include_credential=oidc`) to create a 30-minute Calendar event.
 
-Google is **not** a login method here — it's connected on demand, only when the
-user chooses to schedule a visit.
+Google is link-only (shown only on the Settings page), not a way to log in.
+
+> **Important limitation (by design of this approach):** Kratos's built-in
+> Google provider does **not** request offline access, so it stores no refresh
+> token, and the access token it captures at link time expires after **~1 hour**.
+> After that, scheduling fails and the user must **re-link Google** from
+> Settings. This is the trade-off of routing Google through Kratos rather than a
+> dedicated offline-OAuth flow.
 
 Everything runs with a single `docker compose up`.
 
@@ -59,21 +66,16 @@ In the [Google Cloud Console](https://console.cloud.google.com/):
    `email` / `profile`). While the app is in **Testing** mode, add your own
    Google account under **Test users** so the sensitive Calendar scope works
    without Google verification.
-3. In your **OAuth client**, add this **Authorized redirect URI** (used by the
-   backend's connect-Google flow):
+3. In your **OAuth client**, set the **Authorized redirect URI** to the Kratos
+   OIDC callback (Kratos handles the Google OAuth for linking):
 
-   `http://localhost:4000/api/google/calendar/callback`
-
-   (Login no longer uses Google, so the old Kratos `…/callback/google`
-   redirect URI is not required — it's harmless if you leave it.)
+   `http://localhost:4433/self-service/methods/oidc/callback/google`
 
 Credentials are already filled into `.env`. Edit `.env` to change them.
 
-> Calendar access is requested **only when a user connects Google** (from the
-> Schedule-visit dialog), using offline access so Google returns a refresh
-> token. If a connect attempt reports `norefresh`, remove the app at
-> myaccount.google.com → Security → Third-party access and connect again so
-> Google re-issues a refresh token.
+> Linking Google is done from the **Settings** page ("Link Google"). Because
+> Kratos doesn't request offline access, the captured token lasts ~1 hour —
+> re-link from Settings when scheduling reports that the link expired.
 
 <details>
 <summary>Old note (Yandex — no longer used)</summary>
@@ -101,14 +103,17 @@ config → `kratos-migrate` runs migrations → `kratos` serves → `backend` �
 
 1. Click **Sign up**, choose a **username + password**, and you're signed in
    (Kratos creates the identity and a session).
-2. Click **Schedule visit** on any car. If you haven't connected Google yet,
-   the dialog shows **Connect Google Calendar** — this is the on-demand OAuth
-   consent (offline access → refresh token, stored on your Kratos identity).
-3. After connecting, pick a date & time and confirm. The backend refreshes the
-   token and creates a **30-minute event in your Google Calendar**
-   ("Visit seller — Make Model"), returning a link to open it.
+2. Open **Settings** and click **Link Google** (or click **Schedule visit** →
+   **Go to Settings to link Google**). Kratos runs the Google consent (granting
+   the Calendar scope) and stores the token in your identity's `oidc` credential.
+3. Back on a car, click **Schedule visit**, pick a date & time, and confirm. The
+   backend reads the linked token from Kratos and creates a **30-minute event in
+   your Google Calendar** ("Visit seller — Make Model"), returning a link.
 4. **Reserve** is a separate protected action (`POST /api/orders`) that needs
    only a valid Kratos session — no Google required.
+
+> If scheduling says the Google link expired (~1 hour after linking), just
+> **re-link Google** in Settings — see the limitation note at the top.
 
 ### Admin UI
 
@@ -120,21 +125,20 @@ so the admin API itself stays unexposed.
 > Like the admin API, the Admin UI is **unauthenticated** — it's for local
 > development only. Don't deploy it publicly without putting auth in front of it.
 
-### How the Calendar integration works
+### How the Calendar integration works (through Kratos)
 
-Login and calendar access are **separate** on purpose. Kratos's login token is
-captured once at sign-up and never refreshed, so it can't sustain API calls.
-Instead:
-
-1. **Login** uses Google with only `email` + `profile` scopes (via Kratos).
-2. **Connect Google Calendar** is a backend-owned OAuth flow
-   (`/api/google/calendar/connect` → Google consent → `/callback`) that requests
-   the `calendar.events` scope with `access_type=offline` + `prompt=consent`, so
-   Google returns a **refresh token**.
-3. The backend stores that refresh token on the Kratos identity via the Admin
-   API (`PATCH /admin/identities/{id}`, under `metadata_admin.google_calendar`).
-4. When you schedule a visit, the backend reads the refresh token, mints a fresh
-   access token, and `POST`s the event to the Google Calendar API.
+1. **Login** is username + password (Kratos `password` method).
+2. **Linking Google** uses Kratos's `oidc` method in the **settings flow**.
+   Clicking "Link Google" runs the Google OAuth (scopes `email`, `profile`,
+   `calendar.events`); Kratos attaches the provider to the identity and stores
+   the Google tokens **encrypted** in the identity's `oidc` credential.
+3. When you schedule a visit, the backend calls the **Kratos Admin API**
+   (`GET /admin/identities/{id}?include_credential=oidc`), reads the stored
+   `initial_access_token` for the `google` provider, and `POST`s the event to
+   the Google Calendar API.
+4. Because Kratos doesn't request offline access, there's normally no refresh
+   token and the access token expires after ~1 hour — at which point the user
+   re-links Google from Settings.
 
 > Email/password, Yandex, verification, and recovery are **disabled** in this
 > build (Google-only). The `SMTP_*` values in `.env` are therefore unused; the
@@ -151,10 +155,11 @@ Instead:
 | GET    | `/api/cars/:id`  | public      | Car detail                   |
 | POST   | `/api/orders`    | **session** | Reserve a car                |
 | GET    | `/api/orders`    | **session** | List the user's reservations |
-| GET    | `/api/google/calendar/status`  | **session** | Is the user's calendar connected? |
-| GET    | `/api/google/calendar/connect` | **session** | Start the Google Calendar consent flow |
-| GET    | `/api/google/calendar/callback`| public  | OAuth callback (state-validated) |
+| GET    | `/api/google/calendar/status`  | **session** | Is Google linked to this identity? |
 | POST   | `/api/visits`    | **session** | Create a 30-min Google Calendar visit event |
+
+Google linking itself is handled by **Kratos** (settings flow → OIDC), not by a
+backend route.
 
 Orders are stored in memory and reset when the backend restarts (demo only).
 
