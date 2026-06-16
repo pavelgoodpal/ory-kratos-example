@@ -1,0 +1,82 @@
+# Ory Oathkeeper access rules. Browser → Oathkeeper :4455 → backend :4000.
+# matching_strategy: regexp — <...> denotes a regex capture group.
+
+# Health (public)
+- id: health
+  match:
+    url: "http://localhost:4455/health"
+    methods: [GET]
+  authenticators: [{ handler: anonymous }]
+  authorizer: { handler: allow }
+  mutators: [{ handler: noop }]
+  upstream:
+    url: http://backend:4000
+
+# Who am I — proxied as-is so the backend can run its own whoami (this is what
+# drives the AAL2/MFA step-up). Anonymous = no auth required at the gateway.
+- id: me
+  match:
+    url: "http://localhost:4455/api/me"
+    methods: [GET]
+  authenticators: [{ handler: anonymous }]
+  authorizer: { handler: allow }
+  mutators: [{ handler: noop }]
+  upstream:
+    url: http://backend:4000
+
+# Car catalog (public)
+- id: cars-list
+  match:
+    url: "http://localhost:4455/api/cars"
+    methods: [GET]
+  authenticators: [{ handler: anonymous }]
+  authorizer: { handler: allow }
+  mutators: [{ handler: noop }]
+  upstream:
+    url: http://backend:4000
+
+# Transfer ownership — MUST be authenticated AND the caller must currently own
+# the car (Keto check via remote_json). Listed before the generic car-detail
+# rule so it matches first.
+- id: car-transfer
+  match:
+    url: "http://localhost:4455/api/cars/<[^/]+>/transfer"
+    methods: [POST]
+  authenticators: [{ handler: cookie_session }]
+  authorizer: { handler: remote_json }
+  mutators: [{ handler: header }]
+  upstream:
+    url: http://backend:4000
+
+# Car detail (public)
+- id: car-detail
+  match:
+    url: "http://localhost:4455/api/cars/<[^/]+>"
+    methods: [GET]
+  authenticators: [{ handler: anonymous }]
+  authorizer: { handler: allow }
+  mutators: [{ handler: noop }]
+  upstream:
+    url: http://backend:4000
+
+# Which cars the caller owns (authenticated)
+- id: ownership
+  match:
+    url: "http://localhost:4455/api/ownership"
+    methods: [GET]
+  authenticators: [{ handler: cookie_session }]
+  authorizer: { handler: allow }
+  mutators: [{ handler: header }]
+  upstream:
+    url: http://backend:4000
+
+# Orders (authenticated)
+- id: orders
+  match:
+    url: "http://localhost:4455/api/orders"
+    methods: [GET, POST]
+  authenticators: [{ handler: cookie_session }]
+  authorizer: { handler: allow }
+  mutators: [{ handler: header }]
+  upstream:
+    url: http://backend:4000

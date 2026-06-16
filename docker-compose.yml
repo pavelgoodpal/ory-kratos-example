@@ -19,6 +19,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Creates the separate `keto` database on first boot of a fresh volume.
+      - ./postgres/init-keto.sql:/docker-entrypoint-initdb.d/init-keto.sql:ro
     networks:
       - intranet
     ports:
@@ -105,6 +107,63 @@ services:
     restart: unless-stopped
 
   # --------------------------------------------------------------------------
+  # Ory Keto — authorization (relationship tuples). read :4466, write :4467
+  # --------------------------------------------------------------------------
+  keto-migrate:
+    image: oryd/keto:v0.12.0
+    environment:
+      DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/keto?sslmode=disable
+    volumes:
+      - ./keto:/etc/config/keto:ro
+    command: ["migrate", "up", "-y", "-c", "/etc/config/keto/keto.yml"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - intranet
+    restart: on-failure
+
+  keto:
+    image: oryd/keto:v0.12.0
+    environment:
+      DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/keto?sslmode=disable
+    command: ["serve", "-c", "/etc/config/keto/keto.yml"]
+    volumes:
+      - ./keto:/etc/config/keto:ro
+    ports:
+      - "4466:4466"
+      - "4467:4467"
+    depends_on:
+      keto-migrate:
+        condition: service_completed_successfully
+    networks:
+      - intranet
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Ory Oathkeeper — identity-aware gateway. proxy :4455, api :4456
+  # Authenticates via Kratos, authorizes via Keto, proxies to the backend.
+  # --------------------------------------------------------------------------
+  oathkeeper:
+    image: oryd/oathkeeper:v0.40.7
+    command: ["serve", "-c", "/etc/config/oathkeeper/oathkeeper.yml"]
+    volumes:
+      - ./oathkeeper:/etc/config/oathkeeper:ro
+    ports:
+      - "4455:4455"
+      - "4456:4456"
+    depends_on:
+      kratos:
+        condition: service_started
+      keto:
+        condition: service_started
+      backend:
+        condition: service_started
+    networks:
+      - intranet
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
   # Kratos Admin UI — web interface to list/view/edit/create/delete identities.
   # Runs INSIDE the docker network and reaches the admin API by service name,
   # so the admin API never has to be exposed to the host/internet.
@@ -137,15 +196,22 @@ services:
       context: ./backend
     env_file: .env
     environment:
-      # Inside the docker network, talk to kratos by service name.
+      # Inside the docker network, talk to other services by name.
       KRATOS_PUBLIC_URL: http://kratos:4433
       KRATOS_ADMIN_URL: http://kratos:4434
+      KETO_READ_URL: http://keto:4466
+      KETO_WRITE_URL: http://keto:4467
       PORT: ${PORT}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN}
+      # Primary car owner (seeded on startup; owns all cars initially).
+      OWNER_EMAIL: ${OWNER_EMAIL}
+      OWNER_PASSWORD: ${OWNER_PASSWORD}
     ports:
       - "4000:4000"
     depends_on:
       kratos:
+        condition: service_started
+      keto:
         condition: service_started
     networks:
       - intranet
@@ -160,6 +226,10 @@ services:
     environment:
       # These are read at build/runtime by Vite (see vite.config.ts).
       VITE_KRATOS_PUBLIC_URL: ${KRATOS_PUBLIC_URL}
+      # Browser → backend directly. (Oathkeeper at :4455 is still available as a
+      # gateway, but the backend independently enforces Kratos auth + Keto
+      # ownership, so the UI doesn't depend on it. Set this to :4455 once the
+      # Oathkeeper access rules are verified, if you want all traffic gated.)
       VITE_BACKEND_URL: http://localhost:${PORT}
     ports:
       - "3000:3000"

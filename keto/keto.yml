@@ -1,0 +1,20 @@
+version: v0.12.0
+
+# DSN is provided via the DSN environment variable in docker-compose.
+
+namespaces:
+  location: file:///etc/config/keto/namespaces.ts
+
+serve:
+  read:
+    host: 0.0.0.0
+    port: 4466
+  write:
+    host: 0.0.0.0
+    port: 4467
+  metrics:
+    port: 4468
+
+log:
+  level: info
+  format: text

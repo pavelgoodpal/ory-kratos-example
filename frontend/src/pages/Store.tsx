@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Car, type Me, type Order } from "../api";
+import { TransferModal } from "../components/TransferModal";
 import { logoutUrl, ory } from "../ory";
 
 export default function Store() {
   const [me, setMe] = useState<Me | null>(null);
   const [cars, setCars] = useState<Car[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [owned, setOwned] = useState<Set<string>>(new Set());
+  const [transferring, setTransferring] = useState<Car | null>(null);
   const [notice, setNotice] = useState<string>("");
 
   async function refreshOrders() {
@@ -14,6 +17,15 @@ export default function Store() {
       setOrders(await api.orders());
     } catch {
       setOrders([]);
+    }
+  }
+
+  async function refreshOwnership() {
+    try {
+      const { carIds } = await api.ownership();
+      setOwned(new Set(carIds));
+    } catch {
+      setOwned(new Set());
     }
   }
 
@@ -33,7 +45,10 @@ export default function Store() {
   }, []);
 
   useEffect(() => {
-    if (me?.authenticated) refreshOrders();
+    if (me?.authenticated) {
+      refreshOrders();
+      refreshOwnership();
+    }
   }, [me?.authenticated]);
 
   async function logout() {
@@ -116,17 +131,38 @@ export default function Store() {
                 {car.year} · {car.mileage.toLocaleString()} mi · {car.fuel}
               </p>
               <p className="desc">{car.description}</p>
-              <button
-                className="btn btn-primary full"
-                onClick={() => buy(car)}
-                disabled={ordered.has(car.id)}
-              >
-                {ordered.has(car.id) ? "Reserved ✓" : "Reserve"}
-              </button>
+              {owned.has(car.id) && (
+                <span className="owned-badge">★ Owned by you</span>
+              )}
+              <div className="card-actions">
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => buy(car)}
+                  disabled={ordered.has(car.id)}
+                >
+                  {ordered.has(car.id) ? "Reserved ✓" : "Reserve"}
+                </button>
+                {owned.has(car.id) && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setTransferring(car)}
+                  >
+                    Transfer
+                  </button>
+                )}
+              </div>
             </div>
           </article>
         ))}
       </section>
+
+      {transferring && (
+        <TransferModal
+          car={transferring}
+          onClose={() => setTransferring(null)}
+          onDone={refreshOwnership}
+        />
+      )}
 
       {me?.authenticated && orders.length > 0 && (
         <section className="orders">

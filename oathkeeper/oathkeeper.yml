@@ -1,0 +1,82 @@
+version: v0.40.7
+
+log:
+  level: info
+  format: text
+
+serve:
+  proxy:
+    port: 4455
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:3000
+      allowed_methods: [GET, POST, PUT, PATCH, DELETE]
+      allowed_headers: [Authorization, Content-Type, Cookie]
+      exposed_headers: [Content-Type, Set-Cookie]
+      allow_credentials: true
+  api:
+    port: 4456
+
+access_rules:
+  matching_strategy: regexp
+  repositories:
+    - file:///etc/config/oathkeeper/rules.yml
+
+errors:
+  fallback:
+    - json
+  handlers:
+    json:
+      enabled: true
+      config:
+        verbose: true
+
+authenticators:
+  # Anonymous: lets a route through without auth (subject = "guest"). The
+  # original request (incl. the session cookie) is still forwarded upstream.
+  anonymous:
+    enabled: true
+    config:
+      subject: guest
+  # Cookie session: validates the Ory Kratos session cookie via whoami.
+  # With Kratos required_aal=highest_available, only AAL2 sessions pass.
+  cookie_session:
+    enabled: true
+    config:
+      check_session_url: http://kratos:4433/sessions/whoami
+      preserve_path: true
+      preserve_query: true
+      only:
+        - ory_kratos_session
+  noop:
+    enabled: true
+
+authorizers:
+  allow:
+    enabled: true
+  deny:
+    enabled: true
+  # Keto: checks Car:<carId>#owners@<subject>. The object (carId) is captured
+  # from the request URL by the access rule's regexp group.
+  remote_json:
+    enabled: true
+    config:
+      remote: http://keto:4466/relation-tuples/check
+      payload: |
+        {
+          "namespace": "Car",
+          "object": "{{ index .MatchContext.RegexpCaptureGroups 0 }}",
+          "relation": "owners",
+          "subject_id": "{{ print .Subject }}"
+        }
+
+mutators:
+  noop:
+    enabled: true
+  # Injects the authenticated identity id into a trusted header for the backend.
+  header:
+    enabled: true
+    config:
+      headers:
+        X-User-Id: "{{ print .Subject }}"

@@ -51,4 +51,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ carId }),
     }),
+  ownership: () => req<{ carIds: string[] }>("/api/ownership"),
+  transfer: (carId: string, toEmail: string) =>
+    req<{ carId: string; transferredTo: string }>(
+      `/api/cars/${carId}/transfer`,
+      { method: "POST", body: JSON.stringify({ toEmail }) },
+    ),
 };

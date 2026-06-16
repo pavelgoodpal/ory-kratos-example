@@ -8,6 +8,9 @@ export interface Car {
   fuel: "Petrol" | "Diesel" | "Electric" | "Hybrid";
   image: string;
   description: string;
+  // Populated at startup once the car's Kratos identity is provisioned.
+  kratosIdentityId?: string;
+  kratosEmail?: string;
 }
 
 export interface Order {
