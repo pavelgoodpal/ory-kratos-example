@@ -27,12 +27,13 @@ export function useFlow<T extends { id: string }>(
 
   const flowId = searchParams.get("flow");
   const returnTo = searchParams.get("return_to") ?? undefined;
+  const aal = searchParams.get("aal") ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
 
     if (!flowId) {
-      window.location.replace(initFlowUrl(type, returnTo));
+      window.location.replace(initFlowUrl(type, returnTo, aal));
       return;
     }
 
@@ -44,7 +45,7 @@ export function useFlow<T extends { id: string }>(
         // Flow expired / not found / unauthorized — start a fresh one.
         const status = err?.response?.status;
         if (status === 404 || status === 410 || status === 403) {
-          window.location.replace(initFlowUrl(type, returnTo));
+          window.location.replace(initFlowUrl(type, returnTo, aal));
           return;
         }
         if (!cancelled) setError("Could not load the flow. Please try again.");

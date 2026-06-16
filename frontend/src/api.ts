@@ -15,8 +15,10 @@ export interface Car {
 export interface Me {
   authenticated: boolean;
   id?: string;
-  username?: string;
+  email?: string;
   name?: { first?: string; last?: string };
+  /** True when the password step is done but the emailed code (AAL2) is still needed. */
+  aal2Required?: boolean;
 }
 
 export interface Order {
@@ -24,13 +26,6 @@ export interface Order {
   carId: string;
   email: string;
   createdAt: string;
-}
-
-export interface CalendarEvent {
-  id: string;
-  htmlLink: string;
-  start: string;
-  end: string;
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -56,15 +51,4 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ carId }),
     }),
-  scheduleVisit: (carId: string, startISO: string) =>
-    req<CalendarEvent>("/api/visits", {
-      method: "POST",
-      body: JSON.stringify({
-        carId,
-        start: startISO,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      }),
-    }),
-  calendarStatus: () =>
-    req<{ connected: boolean }>("/api/google/calendar/status"),
 };

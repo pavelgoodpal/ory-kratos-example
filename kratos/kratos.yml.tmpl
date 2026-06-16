@@ -33,37 +33,25 @@ selfservice:
 ${RETURN_URLS_YAML}
 
   methods:
-    # Sign-in is username + password. Google is enabled as an OIDC provider so
-    # it can be LINKED to an existing account via the settings flow; the linked
-    # token (with the Calendar scope) is stored by Kratos in the identity's
-    # `oidc` credential. The frontend only shows the Google button on Settings.
+    # Email + password as the first factor, plus a one-time email CODE as a
+    # required second factor (MFA). Social sign-in (oidc) is disabled.
     password:
       enabled: true
       config:
         haveibeenpwned_enabled: false
         min_password_length: 8
     code:
-      enabled: false
+      enabled: true
+      config:
+        lifespan: 15m
+      # The code is NOT a passwordless login method here; it is the second
+      # factor (AAL2) emailed on every login.
+      passwordless_enabled: false
+      mfa_enabled: true
     link:
       enabled: false
     oidc:
-      enabled: true
-      config:
-        providers:
-          - id: google
-            provider: google
-            client_id: ${GOOGLE_CLIENT_ID}
-            client_secret: ${GOOGLE_CLIENT_SECRET}
-            mapper_url: file:///etc/config/kratos/oidc/google.jsonnet
-            scope:
-              - email
-              - profile
-              - https://www.googleapis.com/auth/calendar.events
-              # Signals Kratos to add `access_type=offline` to the Google auth
-              # request, so Google returns a REFRESH TOKEN that Kratos stores in
-              # the identity's oidc credential (initial_refresh_token). Kratos
-              # strips this pseudo-scope before calling Google.
-              - offline_access
+      enabled: false
 
   flows:
     error:
@@ -74,19 +62,18 @@ ${RETURN_URLS_YAML}
       privileged_session_max_age: 15m
       required_aal: highest_available
 
-    # Recovery and verification are email/code features; not needed for a
-    # Google-only setup (Google supplies a verified email).
+    # Email one-time-code recovery (reset password) and verification.
     recovery:
-      enabled: false
+      enabled: true
       ui_url: ${CLIENT_ORIGIN}/recovery
       use: code
 
     verification:
-      enabled: false
+      enabled: true
       ui_url: ${CLIENT_ORIGIN}/verification
       use: code
       after:
-        default_browser_return_url: ${CLIENT_ORIGIN}/
+        default_browser_return_url: ${CLIENT_ORIGIN}/login
 
     logout:
       after:
@@ -102,10 +89,9 @@ ${RETURN_URLS_YAML}
       after:
         password:
           hooks:
-            - hook: session
-        oidc:
-          hooks:
-            - hook: session
+            # No `session` hook: after registering, the user verifies their
+            # email (OTP) and then logs in with password + the emailed code.
+            - hook: show_verification_ui
 
 log:
   level: info
@@ -142,3 +128,9 @@ session:
   lifespan: 720h
   cookie:
     same_site: Lax
+  whoami:
+    # Require the highest assurance the identity supports. With email-code MFA
+    # enabled and a verified email, that is AAL2 — so a password-only (AAL1)
+    # session is not considered fully authenticated until the emailed code is
+    # entered. This is what forces the OTP second factor on every login.
+    required_aal: highest_available

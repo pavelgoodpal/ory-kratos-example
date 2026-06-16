@@ -20,9 +20,12 @@ export const BACKEND_URL: string =
 export function initFlowUrl(
   flow: "login" | "registration" | "recovery" | "verification" | "settings",
   returnTo?: string,
+  aal?: string,
 ): string {
   const url = new URL(`${KRATOS_URL}/self-service/${flow}/browser`);
   if (returnTo) url.searchParams.set("return_to", returnTo);
+  // aal=aal2 starts the second-factor (emailed code) step of login.
+  if (aal) url.searchParams.set("aal", aal);
   return url.toString();
 }
 

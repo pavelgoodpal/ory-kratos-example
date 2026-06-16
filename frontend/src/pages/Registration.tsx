@@ -13,7 +13,7 @@ export default function Registration() {
   return (
     <AuthCard
       title="Create your account"
-      subtitle="Pick a username and password. You can connect Google later to schedule visits."
+      subtitle="Sign up with your email and a password. We'll email a one-time code to verify your address."
       footer={
         <span>
           Already have an account? <Link to="/login">Sign in</Link>
@@ -21,7 +21,7 @@ export default function Registration() {
       }
     >
       {error && <p className="message message-error">{error}</p>}
-      {flow ? <Flow ui={flow.ui} hideOidc /> : !error && <p className="muted">Loading…</p>}
+      {flow ? <Flow ui={flow.ui} /> : !error && <p className="muted">Loading…</p>}
     </AuthCard>
   );
 }

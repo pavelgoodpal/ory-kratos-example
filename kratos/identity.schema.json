@@ -7,35 +7,38 @@
     "traits": {
       "type": "object",
       "properties": {
-        "username": {
+        "email": {
           "type": "string",
-          "title": "Username",
+          "format": "email",
+          "title": "E-Mail",
           "minLength": 3,
-          "maxLength": 32,
-          "pattern": "^[a-zA-Z0-9_.-]+$",
           "ory.sh/kratos": {
             "credentials": {
               "password": {
                 "identifier": true
+              },
+              "code": {
+                "identifier": true,
+                "via": "email"
               }
+            },
+            "recovery": {
+              "via": "email"
+            },
+            "verification": {
+              "via": "email"
             }
           }
         },
         "name": {
           "type": "object",
           "properties": {
-            "first": {
-              "title": "First name",
-              "type": "string"
-            },
-            "last": {
-              "title": "Last name",
-              "type": "string"
-            }
+            "first": { "title": "First name", "type": "string" },
+            "last": { "title": "Last name", "type": "string" }
           }
         }
       },
-      "required": ["username"],
+      "required": ["email"],
       "additionalProperties": false
     }
   }

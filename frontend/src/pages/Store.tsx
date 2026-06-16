@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Car, type Me, type Order } from "../api";
-import { ScheduleModal } from "../components/ScheduleModal";
 import { logoutUrl, ory } from "../ory";
 
 export default function Store() {
@@ -9,7 +8,6 @@ export default function Store() {
   const [cars, setCars] = useState<Car[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [notice, setNotice] = useState<string>("");
-  const [scheduling, setScheduling] = useState<Car | null>(null);
 
   async function refreshOrders() {
     try {
@@ -20,23 +18,18 @@ export default function Store() {
   }
 
   useEffect(() => {
-    api.me().then(setMe).catch(() => setMe({ authenticated: false }));
+    api
+      .me()
+      .then((m) => {
+        // Password done but the emailed code is still required → step up to AAL2.
+        if (m.aal2Required) {
+          window.location.href = "/login?aal=aal2";
+          return;
+        }
+        setMe(m);
+      })
+      .catch(() => setMe({ authenticated: false }));
     api.cars().then(setCars).catch(() => setCars([]));
-
-    // Feedback after returning from the Google Calendar consent flow
-    // (the user is sent there from the "Schedule visit" dialog).
-    const cal = new URLSearchParams(window.location.search).get("calendar");
-    if (cal) {
-      const messages: Record<string, string> = {
-        connected: "Google connected — you can now schedule a visit.",
-        denied: "Google connection was cancelled.",
-        norefresh:
-          "Google didn't return a refresh token. Remove the app at myaccount.google.com → Security, then connect again.",
-        error: "Something went wrong connecting Google. Please try again.",
-      };
-      setNotice(messages[cal] ?? "");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
   }, []);
 
   useEffect(() => {
@@ -66,14 +59,6 @@ export default function Store() {
     }
   }
 
-  function visit(car: Car) {
-    if (!me?.authenticated) {
-      window.location.href = "/login";
-      return;
-    }
-    setScheduling(car);
-  }
-
   const ordered = new Set(orders.map((o) => o.carId));
 
   return (
@@ -85,7 +70,7 @@ export default function Store() {
         <nav className="topbar-actions">
           {me?.authenticated ? (
             <>
-              <span className="hi">Hi, {me.name?.first || me.username}</span>
+              <span className="hi">Hi, {me.name?.first || me.email}</span>
               <Link to="/settings" className="btn btn-ghost">
                 Settings
               </Link>
@@ -131,26 +116,17 @@ export default function Store() {
                 {car.year} · {car.mileage.toLocaleString()} mi · {car.fuel}
               </p>
               <p className="desc">{car.description}</p>
-              <div className="card-actions">
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => buy(car)}
-                  disabled={ordered.has(car.id)}
-                >
-                  {ordered.has(car.id) ? "Reserved ✓" : "Reserve"}
-                </button>
-                <button className="btn btn-primary" onClick={() => visit(car)}>
-                  Schedule visit
-                </button>
-              </div>
+              <button
+                className="btn btn-primary full"
+                onClick={() => buy(car)}
+                disabled={ordered.has(car.id)}
+              >
+                {ordered.has(car.id) ? "Reserved ✓" : "Reserve"}
+              </button>
             </div>
           </article>
         ))}
       </section>
-
-      {scheduling && (
-        <ScheduleModal car={scheduling} onClose={() => setScheduling(null)} />
-      )}
 
       {me?.authenticated && orders.length > 0 && (
         <section className="orders">

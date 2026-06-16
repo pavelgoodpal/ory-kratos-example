@@ -13,15 +13,20 @@ export default function Login() {
   return (
     <AuthCard
       title="Sign in"
-      subtitle="Enter your username and password."
+      subtitle="Enter your email and password. We'll email you a one-time code to finish signing in."
       footer={
-        <span>
-          No account? <Link to="/registration">Create one</Link>
-        </span>
+        <>
+          <span>
+            No account? <Link to="/registration">Create one</Link>
+          </span>
+          <span>
+            <Link to="/recovery">Forgot password?</Link>
+          </span>
+        </>
       }
     >
       {error && <p className="message message-error">{error}</p>}
-      {flow ? <Flow ui={flow.ui} hideOidc /> : !error && <p className="muted">Loading…</p>}
+      {flow ? <Flow ui={flow.ui} /> : !error && <p className="muted">Loading…</p>}
     </AuthCard>
   );
 }
