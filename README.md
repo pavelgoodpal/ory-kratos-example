@@ -14,12 +14,15 @@ The backend reads that token via the Kratos Admin API
 
 Google is link-only (shown only on the Settings page), not a way to log in.
 
-> **Important limitation (by design of this approach):** Kratos's built-in
-> Google provider does **not** request offline access, so it stores no refresh
-> token, and the access token it captures at link time expires after **~1 hour**.
-> After that, scheduling fails and the user must **re-link Google** from
-> Settings. This is the trade-off of routing Google through Kratos rather than a
-> dedicated offline-OAuth flow.
+> **Refresh tokens via Kratos:** the Google provider includes the
+> `offline_access` pseudo-scope, which makes Kratos add `access_type=offline` to
+> the Google request. Google then returns a **refresh token**, which Kratos
+> stores in the identity's `oidc` credential (`initial_refresh_token`). The
+> backend uses it to mint fresh access tokens, so scheduling keeps working past
+> the ~1-hour access-token lifetime — no constant re-linking. (Google only
+> issues a refresh token on first consent, so if you linked *before* adding
+> `offline_access`, revoke the app at myaccount.google.com → Security and link
+> again.)
 
 Everything runs with a single `docker compose up`.
 
@@ -136,9 +139,10 @@ so the admin API itself stays unexposed.
    (`GET /admin/identities/{id}?include_credential=oidc`), reads the stored
    `initial_access_token` for the `google` provider, and `POST`s the event to
    the Google Calendar API.
-4. Because Kratos doesn't request offline access, there's normally no refresh
-   token and the access token expires after ~1 hour — at which point the user
-   re-links Google from Settings.
+4. The `offline_access` scope makes Kratos request `access_type=offline`, so
+   Google also returns a **refresh token** (stored as `initial_refresh_token`).
+   When the ~1-hour access token expires, the backend refreshes it with that
+   refresh token automatically — no re-link needed.
 
 > Email/password, Yandex, verification, and recovery are **disabled** in this
 > build (Google-only). The `SMTP_*` values in `.env` are therefore unused; the

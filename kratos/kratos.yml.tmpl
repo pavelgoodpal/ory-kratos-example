@@ -8,7 +8,7 @@ serve:
     cors:
       enabled: true
       allowed_origins:
-        - ${CLIENT_ORIGIN}
+${CORS_ORIGINS_YAML}
       allowed_methods:
         - POST
         - GET
@@ -30,7 +30,7 @@ serve:
 selfservice:
   default_browser_return_url: ${CLIENT_ORIGIN}/
   allowed_return_urls:
-    - ${CLIENT_ORIGIN}
+${RETURN_URLS_YAML}
 
   methods:
     # Sign-in is username + password. Google is enabled as an OIDC provider so
@@ -59,6 +59,11 @@ selfservice:
               - email
               - profile
               - https://www.googleapis.com/auth/calendar.events
+              # Signals Kratos to add `access_type=offline` to the Google auth
+              # request, so Google returns a REFRESH TOKEN that Kratos stores in
+              # the identity's oidc credential (initial_refresh_token). Kratos
+              # strips this pseudo-scope before calling Google.
+              - offline_access
 
   flows:
     error:

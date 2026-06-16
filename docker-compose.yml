@@ -21,6 +21,9 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - intranet
+    ports:
+      # Publish Postgres to the host on 5434 (container listens on 5432).
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -46,6 +49,12 @@ services:
         apk add --no-cache gettext >/dev/null
         # URL-encode the '@' in the SMTP user so it is valid inside the URI.
         export SMTP_USER_ENC=$$(printf '%s' "$$SMTP_USER" | sed 's/@/%40/g')
+        # Build YAML list items from the comma-separated CLIENT_ORIGINS
+        # (falls back to CLIENT_ORIGIN). Each origin becomes an indented
+        # "- <origin>" line; envsubst inserts the multiline result.
+        ORIGINS="$${CLIENT_ORIGINS:-$$CLIENT_ORIGIN}"
+        export CORS_ORIGINS_YAML=$$(printf '%s' "$$ORIGINS" | tr ',' '\n' | awk 'NF{gsub(/ /,"");print "        - " $$0}')
+        export RETURN_URLS_YAML=$$(printf '%s' "$$ORIGINS" | tr ',' '\n' | awk 'NF{gsub(/ /,"");print "    - " $$0}')
         envsubst < /src/kratos.yml.tmpl > /etc/config/kratos/kratos.yml
         cp /src/identity.schema.json /etc/config/kratos/identity.schema.json
         mkdir -p /etc/config/kratos/oidc
